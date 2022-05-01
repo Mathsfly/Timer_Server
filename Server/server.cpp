@@ -48,7 +48,7 @@ protected:
 		{
 		case CustomMsgTypes::ServerPing:
 		{
-			std::cout << "[" << client->GetID() << "]: hey\n";
+			std::cout << "[" << client->GetID() << "]: ping\n";
 
 			// Simply bounce message back to client
 			client->Send(msg);
