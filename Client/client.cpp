@@ -11,6 +11,8 @@ enum class CustomMsgTypes : uint32_t
 	ServerPing,
 	MessageAll,
 	ServerMessage,
+	ServerTimeMessage,
+	DisconnectAll
 };
 
 
@@ -94,6 +96,23 @@ int main()
 						uint32_t clientID;
 						msg >> clientID;
 						std::cout << "Hello from [" << clientID << "]\n";
+					}
+					break;
+
+					case CustomMsgTypes::ServerTimeMessage:
+					{
+						using boost::posix_time::ptime;
+						using boost::posix_time::second_clock;
+						using boost::gregorian::day_clock;
+
+						ptime dateTime;
+						msg >> dateTime;
+						std::cout << to_simple_string(dateTime) <<"\n";
+					}
+					break;
+					case CustomMsgTypes::DisconnectAll:
+					{
+						std::cout << "Bye \n";
 					}
 					break;
 				}

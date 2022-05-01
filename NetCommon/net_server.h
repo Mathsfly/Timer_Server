@@ -56,7 +56,7 @@ namespace ts
 				std::cout << "[SERVER] Started!\n";
 
 				// run timer
-				CallTimer();
+				BroadcastUTCToClients();
 
 				// run signt
 				SigintKey();
@@ -134,15 +134,123 @@ namespace ts
 			// Send a message to a specific client
 			void MessageClient(std::shared_ptr<connection<T>> client, const message<T>& msg)
 			{
+				// Check client is legitimate...
+				if (client && client->IsConnected())
+				{
+					// ...and post the message via the connection
+					client->Send(msg);
+				}
+				else
+				{
+					// If we cant communicate with client then we may as 
+					// well remove the client - let the server know, it may
+					// be tracking it somehow
+					OnClientDisconnect(client);
 
+					// Off you go now, bye bye!
+					client.reset();
+
+					// Then physically remove it from the container
+					m_deqConnections.erase(
+						std::remove(m_deqConnections.begin(), m_deqConnections.end(), client), m_deqConnections.end());
+				}
 			}
 
 			// Send message to all clients
 			void MessageAllClients(const message<T>& msg, std::shared_ptr<connection<T>> pIgnoreClient = nullptr)
 			{
+				bool bInvalidClientExists = false;
 
+				// Iterate through all clients in container
+				for (auto& client : m_deqConnections)
+				{
+					// Check client is connected...
+					if (client && client->IsConnected())
+					{
+						// ..it is!
+						if (client != pIgnoreClient)
+							client->Send(msg);
+					}
+					else
+					{
+						// The client couldnt be contacted, so assume it has
+						// disconnected.
+						OnClientDisconnect(client);
+						client.reset();
+
+						// Set this flag to then remove dead clients from container
+						bInvalidClientExists = true;
+					}
+				}
+
+				// Remove dead clients, all in one go - this way, we dont invalidate the
+				// container as we iterated through it.
+				if (bInvalidClientExists)
+					m_deqConnections.erase(
+						std::remove(m_deqConnections.begin(), m_deqConnections.end(), nullptr), m_deqConnections.end());
 			}
 
+			void HandlerTimer()
+			{
+				if (m_sigflag == 1) {
+					BroadCashTimer();
+					m_timer.expires_at(m_timer.expiry() + asio::chrono::seconds(1));
+					m_timer.async_wait(boost::bind(&server_interface::HandlerTimer, this));
+				}
+				else if (m_sigflag == 0){
+					// catch first Ctrl+C
+					m_sigflag = 2;
+					m_timer.expires_at(m_timer.expiry() + asio::chrono::seconds(1));
+					m_timer.async_wait(boost::bind(&server_interface::HandlerTimer, this));
+				}
+				else if (m_sigflag == 2) {
+					// Disconnect clients.
+					QuitSlowly();
+					m_sigflag = 3;
+					// wait 1 second before close server.
+					m_timer.expires_at(m_timer.expiry() + asio::chrono::seconds(2));
+					m_timer.async_wait(boost::bind(&server_interface::HandlerTimer, this));
+				}
+				else {
+					exit(1);
+				}
+			}
+
+			void BroadcastUTCToClients(){
+				std::cout << "Broadcast timer to all clients" << std::endl;
+				m_timer.async_wait(boost::bind(&server_interface::HandlerTimer, this));
+			}
+
+			void QuitSlowly() {
+				std::cout << " Disconnect All Clients and close the server.\n" << std::endl;
+				for (auto& client : m_deqConnections)
+				{
+					client->Disconnect();
+				}
+			}
+
+			void handler(boost::system::error_code error, int signal_number) {
+
+				if (m_sigflag) {
+					std::cout << " A signal(SIGINT) occurred.\n" << std::endl;
+					m_sigflag = 0;
+
+					// Waite second Ctrl+C
+					m_signals.async_wait(boost::bind(&server_interface::handler, this, std::placeholders::_1, std::placeholders::_2));
+
+					DisconnectAll();
+				}
+				else {
+					std::cout << "Forced Quit \n" << std::endl;
+					exit(1);
+				}
+			}
+
+			void SigintKey() {
+				std::cout << "Catch key" << std::endl;
+				m_signals.async_wait(boost::bind(&server_interface::handler, this, std::placeholders::_1, std::placeholders::_2));
+			}
+	
 			// Force server to respond to incoming messages
 			void Update(size_t nMaxMessages = -1, bool bWait = false)
 			{
@@ -216,6 +324,14 @@ namespace ts
 
 			// Clients will be identified in the "wider system" via an ID
 			uint32_t nIDCounter = 1000;
+
+			// timer
+			asio::steady_timer m_timer;
+
+			//catch key
+			asio::signal_set m_signals;
+
+			sig_atomic_t m_sigflag = 1;
 		};
 	}
 }
